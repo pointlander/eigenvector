@@ -115,12 +115,12 @@ func main() {
 	data2 := make([]float64, 0, len(iris)*len(iris))
 	vectors := make([][]float64, len(iris))
 	for r := range len(iris) {
-		row := make([]float64, 3)
+		row := make([]float64, 2)
 		fmt.Println(eigenvectors.At(r, 0))
 		for c := range len(iris) {
 			data2 = append(data2, cmplx.Abs(eigenvectors.At(r, c)))
 		}
-		for c := range 3 {
+		for c := range 2 {
 			row[c] = cmplx.Abs(eigenvectors.At(r, c))
 		}
 		vectors[r] = row
