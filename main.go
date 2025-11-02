@@ -118,6 +118,50 @@ func Load() []Fisher {
 }
 
 func main() {
+	const (
+		// S is the scaling factor for the softmax
+		S = 1.0 - 1e-300
+	)
+
+	softmax := func(values []float64) {
+		max := 0.0
+		for _, v := range values {
+			if v > max {
+				max = v
+			}
+		}
+		s := max * S
+		sum := 0.0
+		for j, value := range values {
+			values[j] = math.Exp(value - s)
+			sum += values[j]
+		}
+		for j, value := range values {
+			values[j] = value / sum
+		}
+	}
+
+	dot := func(a, b []float64) float64 {
+		x := 0.0
+		for i, value := range a {
+			x += value * b[i]
+		}
+		return x
+	}
+
+	cs := func(a, b []float64) float64 {
+		ab := dot(a, b)
+		aa := dot(a, a)
+		bb := dot(b, b)
+		if aa <= 0 {
+			return 0
+		}
+		if bb <= 0 {
+			return 0
+		}
+		return ab / (math.Sqrt(aa) * math.Sqrt(bb))
+	}
+
 	iris := Load()
 	data := make([]float64, 0, 4*len(iris))
 	for _, value := range iris {
@@ -126,6 +170,18 @@ func main() {
 	a := mat.NewDense(len(iris), 4, data)
 	adj := mat.NewDense(len(iris), len(iris), nil)
 	adj.Mul(a, a.T())
+	cp := mat.NewDense(len(iris), len(iris), nil)
+	cp.Copy(adj)
+	for r := range len(iris) {
+		row := make([]float64, len(iris))
+		for ii := range row {
+			row[ii] = cp.At(r, ii)
+		}
+		softmax(row)
+		cp.SetRow(r, row)
+	}
+	x := mat.NewDense(len(iris), 4, nil)
+	x.Mul(cp, a)
 	var eig mat.Eigen
 	ok := eig.Factorize(adj, mat.EigenRight)
 	if !ok {
@@ -136,9 +192,12 @@ func main() {
 	eig.VectorsTo(eigenvectors)
 	data2 := make([]float64, 0, len(iris)*len(iris))
 	vectors := make([][]float64, len(iris))
+	i, j := make([]float64, 0, len(iris)), make([]float64, 0, len(iris))
 	for r := range len(iris) {
 		row := make([]float64, 2)
 		fmt.Println(eigenvectors.At(r, 0))
+		i = append(i, cmplx.Abs(eigenvectors.At(r, 0)))
+		j = append(j, x.At(r, 0))
 		for c := range len(iris) {
 			data2 = append(data2, cmplx.Abs(eigenvectors.At(r, c)))
 		}
@@ -317,4 +376,5 @@ func main() {
 			fmt.Println(iris[i].Cluster, iris[i].Label)
 		}
 	}
+	fmt.Println(cs(i, j))
 }
