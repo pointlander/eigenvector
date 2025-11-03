@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"embed"
 	"encoding/csv"
+	"flag"
 	"fmt"
 	"io"
 	"math"
@@ -117,7 +118,154 @@ func Load() []Fisher {
 	return fisher
 }
 
+var (
+	FlagAutoEncoder = flag.Bool("ae", false, "autoencoder mode")
+)
+
+// AutoEncoderMode is the autoencoder mode
+func AutoEncoderMode() {
+	rng := rand.New(rand.NewSource(1))
+	iris := Load()
+	set := tf64.NewSet()
+	set.Add("a", 4, len(iris))
+	a := set.ByName["a"]
+	for _, row := range iris {
+		a.X = append(a.X, row.Measures...)
+	}
+
+	for ii := range set.Weights {
+		w := set.Weights[ii]
+		if strings.HasPrefix(w.N, "a") {
+			w.States = make([][]float64, StateTotal)
+			for ii := range w.States {
+				w.States[ii] = make([]float64, len(w.X))
+			}
+			continue
+		}
+		if strings.HasPrefix(w.N, "b") {
+			w.X = w.X[:cap(w.X)]
+			w.States = make([][]float64, StateTotal)
+			for ii := range w.States {
+				w.States[ii] = make([]float64, len(w.X))
+			}
+			continue
+		}
+		factor := math.Sqrt(2.0 / float64(w.S[0]))
+		for range cap(w.X) {
+			w.X = append(w.X, rng.NormFloat64()*factor)
+		}
+		w.States = make([][]float64, StateTotal)
+		for ii := range w.States {
+			w.States[ii] = make([]float64, len(w.X))
+		}
+	}
+
+	drop := .3
+	dropout := map[string]interface{}{
+		"rng":  rng,
+		"drop": &drop,
+	}
+
+	sa := tf64.T(tf64.Mul(tf64.Dropout(tf64.Mul(set.Get("a"), set.Get("a")), dropout), tf64.T(set.Get("a"))))
+	loss := tf64.Avg(tf64.Quadratic(set.Get("a"), sa))
+
+	for iteration := range 256 {
+		pow := func(x float64) float64 {
+			y := math.Pow(x, float64(iteration+1))
+			if math.IsNaN(y) || math.IsInf(y, 0) {
+				return 0
+			}
+			return y
+		}
+
+		set.Zero()
+		l := tf64.Gradient(loss).X[0]
+		if math.IsNaN(float64(l)) || math.IsInf(float64(l), 0) {
+			fmt.Println(iteration, l)
+			return
+		}
+
+		norm := 0.0
+		for _, p := range set.Weights {
+			for _, d := range p.D {
+				norm += d * d
+			}
+		}
+		norm = math.Sqrt(norm)
+		b1, b2 := pow(B1), pow(B2)
+		scaling := 1.0
+		if norm > 1 {
+			scaling = 1 / norm
+		}
+		for _, w := range set.Weights {
+			for ii, d := range w.D {
+				g := d * scaling
+				m := B1*w.States[StateM][ii] + (1-B1)*g
+				v := B2*w.States[StateV][ii] + (1-B2)*g*g
+				w.States[StateM][ii] = m
+				w.States[StateV][ii] = v
+				mhat := m / (1 - b1)
+				vhat := v / (1 - b2)
+				if vhat < 0 {
+					vhat = 0
+				}
+				w.X[ii] -= Eta * mhat / (math.Sqrt(vhat) + 1e-8)
+			}
+		}
+		fmt.Println(l)
+	}
+
+	vectors := make([][]float64, len(iris))
+	for i := range vectors {
+		row := make([]float64, 4)
+		for ii := range row {
+			row[ii] = a.X[i*4+ii]
+		}
+		vectors[i] = row
+	}
+
+	meta := make([][]float64, len(iris))
+	for i := range meta {
+		meta[i] = make([]float64, len(iris))
+	}
+	const k = 3
+	for i := 0; i < 33; i++ {
+		clusters, _, err := kmeans.Kmeans(int64(i+1), vectors, k, kmeans.SquaredEuclideanDistance, -1)
+		if err != nil {
+			panic(err)
+		}
+		for i := 0; i < len(meta); i++ {
+			target := clusters[i]
+			for j, v := range clusters {
+				if v == target {
+					meta[i][j]++
+				}
+			}
+		}
+	}
+	clusters, _, err := kmeans.Kmeans(1, meta, 3, kmeans.SquaredEuclideanDistance, -1)
+	if err != nil {
+		panic(err)
+	}
+	for i := range clusters {
+		iris[i].Cluster = clusters[i]
+	}
+	sort.Slice(iris, func(i, j int) bool {
+		return iris[i].Cluster < iris[j].Cluster
+	})
+	for i := range iris {
+		fmt.Println(iris[i].Cluster, iris[i].Label)
+	}
+}
+
 func main() {
+	flag.Parse()
+
+	if *FlagAutoEncoder {
+		AutoEncoderMode()
+		return
+	}
+
 	const (
 		// S is the scaling factor for the softmax
 		S = 1.0 - 1e-300
@@ -162,185 +310,53 @@ func main() {
 		return ab / (math.Sqrt(aa) * math.Sqrt(bb))
 	}
 
-	iris := Load()
-	data := make([]float64, 0, 4*len(iris))
-	for _, value := range iris {
-		data = append(data, value.Measures...)
-	}
-	a := mat.NewDense(len(iris), 4, data)
-	adj := mat.NewDense(len(iris), len(iris), nil)
-	adj.Mul(a, a.T())
-	cp := mat.NewDense(len(iris), len(iris), nil)
-	cp.Copy(adj)
-	for r := range len(iris) {
-		row := make([]float64, len(iris))
-		for ii := range row {
-			row[ii] = cp.At(r, ii)
+	process := func(iris []Fisher, cluster bool) float64 {
+		data := make([]float64, 0, 4*len(iris))
+		for _, value := range iris {
+			data = append(data, value.Measures...)
 		}
-		softmax(row)
-		cp.SetRow(r, row)
-	}
-	x := mat.NewDense(len(iris), 4, nil)
-	x.Mul(cp, a)
-	var eig mat.Eigen
-	ok := eig.Factorize(adj, mat.EigenRight)
-	if !ok {
-		fmt.Println("Eigenvalue decomposition failed.")
-		return
-	}
-	eigenvectors := mat.NewCDense(len(iris), len(iris), nil)
-	eig.VectorsTo(eigenvectors)
-	data2 := make([]float64, 0, len(iris)*len(iris))
-	vectors := make([][]float64, len(iris))
-	i, j := make([]float64, 0, len(iris)), make([]float64, 0, len(iris))
-	for r := range len(iris) {
-		row := make([]float64, 2)
-		fmt.Println(eigenvectors.At(r, 0))
-		i = append(i, cmplx.Abs(eigenvectors.At(r, 0)))
-		j = append(j, x.At(r, 0))
-		for c := range len(iris) {
-			data2 = append(data2, cmplx.Abs(eigenvectors.At(r, c)))
-		}
-		for c := range 2 {
-			row[c] = cmplx.Abs(eigenvectors.At(r, c))
-		}
-		vectors[r] = row
-	}
-	b := mat.NewDense(len(iris), len(iris), data2)
-	_ = b
-
-	meta := make([][]float64, len(iris))
-	for i := range meta {
-		meta[i] = make([]float64, len(iris))
-	}
-	const k = 3
-	for i := 0; i < 33; i++ {
-		clusters, _, err := kmeans.Kmeans(int64(i+1), vectors, k, kmeans.SquaredEuclideanDistance, -1)
-		if err != nil {
-			panic(err)
-		}
-		for i := 0; i < len(meta); i++ {
-			target := clusters[i]
-			for j, v := range clusters {
-				if v == target {
-					meta[i][j]++
-				}
-			}
-		}
-	}
-	clusters, _, err := kmeans.Kmeans(1, meta, 3, kmeans.SquaredEuclideanDistance, -1)
-	if err != nil {
-		panic(err)
-	}
-	for i := range clusters {
-		iris[i].Cluster = clusters[i]
-	}
-	sort.Slice(iris, func(i, j int) bool {
-		return iris[i].Cluster < iris[j].Cluster
-	})
-	for i := range iris {
-		fmt.Println(iris[i].Cluster, iris[i].Label)
-	}
-
-	{
-		rng := rand.New(rand.NewSource(1))
-		iris := Load()
-		set := tf64.NewSet()
-		set.Add("a", 4, len(iris))
-		a := set.ByName["a"]
-		for _, row := range iris {
-			a.X = append(a.X, row.Measures...)
-		}
-
-		for ii := range set.Weights {
-			w := set.Weights[ii]
-			if strings.HasPrefix(w.N, "a") {
-				w.States = make([][]float64, StateTotal)
-				for ii := range w.States {
-					w.States[ii] = make([]float64, len(w.X))
-				}
-				continue
-			}
-			if strings.HasPrefix(w.N, "b") {
-				w.X = w.X[:cap(w.X)]
-				w.States = make([][]float64, StateTotal)
-				for ii := range w.States {
-					w.States[ii] = make([]float64, len(w.X))
-				}
-				continue
-			}
-			factor := math.Sqrt(2.0 / float64(w.S[0]))
-			for range cap(w.X) {
-				w.X = append(w.X, rng.NormFloat64()*factor)
-			}
-			w.States = make([][]float64, StateTotal)
-			for ii := range w.States {
-				w.States[ii] = make([]float64, len(w.X))
-			}
-		}
-
-		drop := .3
-		dropout := map[string]interface{}{
-			"rng":  rng,
-			"drop": &drop,
-		}
-
-		sa := tf64.T(tf64.Mul(tf64.Dropout(tf64.Mul(set.Get("a"), set.Get("a")), dropout), tf64.T(set.Get("a"))))
-		loss := tf64.Avg(tf64.Quadratic(set.Get("a"), sa))
-
-		for iteration := range 256 {
-			pow := func(x float64) float64 {
-				y := math.Pow(x, float64(iteration+1))
-				if math.IsNaN(y) || math.IsInf(y, 0) {
-					return 0
-				}
-				return y
-			}
-
-			set.Zero()
-			l := tf64.Gradient(loss).X[0]
-			if math.IsNaN(float64(l)) || math.IsInf(float64(l), 0) {
-				fmt.Println(iteration, l)
-				return
-			}
-
-			norm := 0.0
-			for _, p := range set.Weights {
-				for _, d := range p.D {
-					norm += d * d
-				}
-			}
-			norm = math.Sqrt(norm)
-			b1, b2 := pow(B1), pow(B2)
-			scaling := 1.0
-			if norm > 1 {
-				scaling = 1 / norm
-			}
-			for _, w := range set.Weights {
-				for ii, d := range w.D {
-					g := d * scaling
-					m := B1*w.States[StateM][ii] + (1-B1)*g
-					v := B2*w.States[StateV][ii] + (1-B2)*g*g
-					w.States[StateM][ii] = m
-					w.States[StateV][ii] = v
-					mhat := m / (1 - b1)
-					vhat := v / (1 - b2)
-					if vhat < 0 {
-						vhat = 0
-					}
-					w.X[ii] -= Eta * mhat / (math.Sqrt(vhat) + 1e-8)
-				}
-			}
-			fmt.Println(l)
-		}
-
-		vectors := make([][]float64, len(iris))
-		for i := range vectors {
-			row := make([]float64, 4)
+		a := mat.NewDense(len(iris), 4, data)
+		adj := mat.NewDense(len(iris), len(iris), nil)
+		adj.Mul(a, a.T())
+		cp := mat.NewDense(len(iris), len(iris), nil)
+		cp.Copy(adj)
+		for r := range len(iris) {
+			row := make([]float64, len(iris))
 			for ii := range row {
-				row[ii] = a.X[i*4+ii]
+				row[ii] = cp.At(r, ii)
 			}
-			vectors[i] = row
+			softmax(row)
+			cp.SetRow(r, row)
+		}
+		x := mat.NewDense(len(iris), 4, nil)
+		x.Mul(cp, a)
+		var eig mat.Eigen
+		ok := eig.Factorize(adj, mat.EigenRight)
+		if !ok {
+			fmt.Println("Eigenvalue decomposition failed.")
+			return 0
+		}
+		eigenvectors := mat.NewCDense(len(iris), len(iris), nil)
+		eig.VectorsTo(eigenvectors)
+		data2 := make([]float64, 0, len(iris)*len(iris))
+		vectors := make([][]float64, len(iris))
+		i, j := make([]float64, 0, len(iris)), make([]float64, 0, len(iris))
+		for r := range len(iris) {
+			row := make([]float64, 2)
+			fmt.Println(eigenvectors.At(r, 0))
+			i = append(i, cmplx.Abs(eigenvectors.At(r, 0)))
+			j = append(j, x.At(r, 0))
+			for c := range len(iris) {
+				data2 = append(data2, cmplx.Abs(eigenvectors.At(r, c)))
+			}
+			for c := range 2 {
+				row[c] = cmplx.Abs(eigenvectors.At(r, c))
+			}
+			vectors[r] = row
+		}
+
+		if !cluster {
+			return cs(i, j)
 		}
 
 		meta := make([][]float64, len(iris))
@@ -375,6 +391,9 @@ func main() {
 		for i := range iris {
 			fmt.Println(iris[i].Cluster, iris[i].Label)
 		}
+		return cs(i, j)
 	}
-	fmt.Println(cs(i, j))
+
+	iris := Load()
+	fmt.Println(process(iris, true))
 }
