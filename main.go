@@ -118,6 +118,20 @@ func Load() []Fisher {
 	return fisher
 }
 
+// Random generates a random iris data set
+func Random(seed int64) []Fisher {
+	fisher, rng := make([]Fisher, 150), rand.New(rand.NewSource(seed))
+	for i := range fisher {
+		fisher[i].Measures = make([]float64, 4)
+		for ii := range fisher[i].Measures {
+			fisher[i].Measures[ii] = rng.Float64()
+		}
+		fisher[i].Label = fmt.Sprintf("%d", i)
+		fisher[i].Index = i
+	}
+	return fisher
+}
+
 var (
 	FlagAutoEncoder = flag.Bool("ae", false, "autoencoder mode")
 )
@@ -396,4 +410,18 @@ func main() {
 
 	iris := Load()
 	fmt.Println(process(iris, true))
+	results := make([]float64, 128)
+	count := 0
+	for i := range results {
+		iris := Random(int64(i + 1))
+		cs := process(iris, false)
+		results[i] = cs
+		if cs < .95 {
+			count++
+		}
+	}
+	for _, value := range results {
+		fmt.Println(value)
+	}
+	fmt.Println(count)
 }
