@@ -133,7 +133,10 @@ func Random(seed int64) []Fisher {
 }
 
 var (
+	// FlagAutoEncoder is the autoencoder mode
 	FlagAutoEncoder = flag.Bool("ae", false, "autoencoder mode")
+	// FlagMPR is the markov page rank mode
+	FlagMPR = flag.Bool("mpr", false, "markov page rank mode")
 )
 
 // AutoEncoderMode is the autoencoder mode
@@ -322,6 +325,44 @@ func main() {
 			return 0
 		}
 		return ab / (math.Sqrt(aa) * math.Sqrt(bb))
+	}
+
+	if *FlagMPR {
+		rng := rand.New(rand.NewSource(1))
+		iris := Load()
+		length := len(iris)
+		adj := make([]float64, length*length)
+		for i := range length {
+			for ii := range length {
+				adj[i*length+ii] = dot(iris[i].Measures, iris[ii].Measures)
+			}
+		}
+		for i := range length {
+			sum := 0.0
+			a := adj[i*length : (i+1)*length]
+			for _, value := range a {
+				sum += value
+			}
+			for ii := range a {
+				a[ii] /= sum
+			}
+		}
+		markov := make([]float64, length*length)
+		node := 0
+		for range 512 * 1024 {
+			total, selected := 0.0, rng.Float64()
+			a := adj[node*length : (node+1)*length]
+			for i, value := range a {
+				total += value
+				if selected < total {
+					markov[i*length+node]++
+					node = i
+					break
+				}
+			}
+		}
+		fmt.Println(markov)
+		return
 	}
 
 	process := func(iris []Fisher, cluster bool) float64 {
