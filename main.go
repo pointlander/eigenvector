@@ -366,6 +366,25 @@ func main() {
 		for i := range data {
 			data[i] = markov[i*length : (i+1)*length]
 		}
+		avg := make([]float64, length)
+		for _, v := range data {
+			for ii, value := range v {
+				avg[ii] += value
+			}
+		}
+		for i := range avg {
+			avg[i] /= float64(len(data))
+		}
+		stddev := make([]float64, length)
+		for _, v := range data {
+			for ii, value := range v {
+				diff := value - avg[ii]
+				stddev[ii] += diff * diff
+			}
+		}
+		for i := range stddev {
+			stddev[i] = math.Sqrt(stddev[i] / float64(len(data)))
+		}
 		meta := make([][]float64, len(iris))
 		for i := range meta {
 			meta[i] = make([]float64, len(iris))
@@ -405,6 +424,7 @@ func main() {
 		for i, v := range acc {
 			fmt.Println(i, v)
 		}
+		fmt.Println(stddev)
 		return
 	}
 
