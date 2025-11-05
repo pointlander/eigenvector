@@ -385,13 +385,31 @@ func main() {
 		for i := range stddev {
 			stddev[i] = math.Sqrt(stddev[i] / float64(len(data)))
 		}
+		type Column struct {
+			Index  int
+			Stddev float64
+		}
+		columns := make([]Column, length)
+		for i := range columns {
+			columns[i].Index = i
+			columns[i].Stddev = stddev[i]
+		}
+		sort.Slice(columns, func(i, j int) bool {
+			return columns[i].Stddev > columns[j].Stddev
+		})
+		data2 := make([][]float64, length)
+		for i := range data2 {
+			for ii := range columns[:3] {
+				data2[i] = append(data2[i], markov[i*length+columns[ii].Index])
+			}
+		}
 		meta := make([][]float64, len(iris))
 		for i := range meta {
 			meta[i] = make([]float64, len(iris))
 		}
 		const k = 3
 		for i := 0; i < 33; i++ {
-			clusters, _, err := kmeans.Kmeans(int64(i+1), data, k, kmeans.SquaredEuclideanDistance, -1)
+			clusters, _, err := kmeans.Kmeans(int64(i+1), data2, k, kmeans.SquaredEuclideanDistance, -1)
 			if err != nil {
 				panic(err)
 			}
@@ -424,7 +442,6 @@ func main() {
 		for i, v := range acc {
 			fmt.Println(i, v)
 		}
-		fmt.Println(stddev)
 		return
 	}
 
