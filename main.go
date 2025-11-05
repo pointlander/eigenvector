@@ -331,6 +331,17 @@ func main() {
 		rng := rand.New(rand.NewSource(1))
 		iris := Load()
 		length := len(iris)
+		/*for i := range iris {
+			max := 0.0
+			for _, value := range iris[i].Measures {
+				if value > max {
+					max = value
+				}
+			}
+			for ii, value := range iris[i].Measures {
+				iris[i].Measures[ii] = value / max
+			}
+		}*/
 		adj := make([]float64, length*length)
 		for i := range length {
 			for ii := range length {
