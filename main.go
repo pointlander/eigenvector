@@ -373,9 +373,66 @@ func main() {
 			}
 		}
 
+		type Point struct {
+			Value float64
+			Index int
+		}
+		reduction := func(points []Point) int {
+			sort.Slice(points, func(i, j int) bool {
+				return points[i].Value < points[j].Value
+			})
+			varab := 0.0
+			avgab := 0.0
+			for _, v := range points {
+				avgab += v.Value
+			}
+			avgab /= float64(len(points))
+			for _, v := range points {
+				diff := avgab - v.Value
+				varab += diff * diff
+			}
+			varab /= float64(len(points))
+			max, index := 0.0, 0
+			for i := 1; i < len(points)-1; i++ {
+				vara, varb := 0.0, 0.0
+				avga, avgb := 0.0, 0.0
+				ca, cb := 0.0, 0.0
+				for _, value := range points[:i] {
+					avga += value.Value
+					ca++
+				}
+				avga /= ca
+				for _, value := range points[i:] {
+					avgb += value.Value
+					cb++
+				}
+				avgb /= cb
+				for _, value := range points[:i] {
+					diff := avga - value.Value
+					vara += diff * diff
+				}
+				vara /= ca
+				for _, value := range points[i:] {
+					diff := avgb - value.Value
+					varb += diff * diff
+				}
+				varb /= cb
+				if diff := varab - (vara + varb); diff > max {
+					max, index = diff, i
+				}
+			}
+			return index
+		}
+		points := make([][]Point, length)
 		data := make([][]float64, length)
 		for i := range data {
 			data[i] = markov[i*length : (i+1)*length]
+			for ii := range data[i] {
+				points[ii] = append(points[ii], Point{
+					Value: data[i][ii],
+					Index: i,
+				})
+			}
 		}
 		avg := make([]float64, length)
 		for _, v := range data {
@@ -408,6 +465,9 @@ func main() {
 		sort.Slice(columns, func(i, j int) bool {
 			return columns[i].Stddev > columns[j].Stddev
 		})
+		s1 := reduction(points[columns[0].Index])
+		s2 := reduction(points[columns[0].Index][:s1])
+		s3 := reduction(points[columns[0].Index][s1:])
 		data2 := make([][]float64, length)
 		for i := range data2 {
 			for ii := range columns[:3] {
@@ -453,6 +513,17 @@ func main() {
 		for i, v := range acc {
 			fmt.Println(i, v)
 		}
+		fmt.Println(s1, s2, s3)
+		for i := range s1 {
+			fmt.Println(0, iris[points[columns[0].Index][i].Index].Label)
+		}
+		for i := s1; i < s1+s3; i++ {
+			fmt.Println(1, iris[points[columns[0].Index][i].Index].Label)
+		}
+		for i := s1 + s3; i < len(iris); i++ {
+			fmt.Println(2, iris[points[columns[0].Index][i].Index].Label)
+		}
+
 		return
 	}
 
