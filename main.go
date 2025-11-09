@@ -275,11 +275,224 @@ func AutoEncoderMode() {
 	}
 }
 
+// MPRMode is the markov page rank mode
+func MPRMode() {
+	dot := func(a, b []float64) float64 {
+		x := 0.0
+		for i, value := range a {
+			x += value * b[i]
+		}
+		return x
+	}
+
+	rng := rand.New(rand.NewSource(1))
+	iris := Load()
+	length := len(iris)
+	/*for i := range iris {
+		max := 0.0
+		for _, value := range iris[i].Measures {
+			if value > max {
+				max = value
+			}
+		}
+		for ii, value := range iris[i].Measures {
+			iris[i].Measures[ii] = value / max
+		}
+	}*/
+	adj := make([]float64, length*length)
+	for i := range length {
+		for ii := range length {
+			adj[i*length+ii] = dot(iris[i].Measures, iris[ii].Measures)
+		}
+	}
+	for i := range length {
+		sum := 0.0
+		a := adj[i*length : (i+1)*length]
+		for _, value := range a {
+			sum += value
+		}
+		for ii := range a {
+			a[ii] /= sum
+		}
+	}
+	markov := make([]float64, length*length)
+	node := 0
+	for range 8 * 1024 * 1024 {
+		total, selected := 0.0, rng.Float64()
+		a := adj[node*length : (node+1)*length]
+		for i, value := range a {
+			total += value
+			if selected < total {
+				markov[i*length+node]++
+				node = i
+				break
+			}
+		}
+	}
+
+	type Point struct {
+		Value float64
+		Index int
+	}
+	reduction := func(points []Point) int {
+		sort.Slice(points, func(i, j int) bool {
+			return points[i].Value < points[j].Value
+		})
+		varab := 0.0
+		avgab := 0.0
+		for _, v := range points {
+			avgab += v.Value
+		}
+		avgab /= float64(len(points))
+		for _, v := range points {
+			diff := avgab - v.Value
+			varab += diff * diff
+		}
+		varab /= float64(len(points))
+		max, index := 0.0, 0
+		for i := 1; i < len(points)-1; i++ {
+			vara, varb := 0.0, 0.0
+			avga, avgb := 0.0, 0.0
+			ca, cb := 0.0, 0.0
+			for _, value := range points[:i] {
+				avga += value.Value
+				ca++
+			}
+			avga /= ca
+			for _, value := range points[i:] {
+				avgb += value.Value
+				cb++
+			}
+			avgb /= cb
+			for _, value := range points[:i] {
+				diff := avga - value.Value
+				vara += diff * diff
+			}
+			vara /= ca
+			for _, value := range points[i:] {
+				diff := avgb - value.Value
+				varb += diff * diff
+			}
+			varb /= cb
+			if diff := varab - (vara + varb); diff > max {
+				max, index = diff, i
+			}
+		}
+		return index
+	}
+	points := make([][]Point, length)
+	data := make([][]float64, length)
+	for i := range data {
+		data[i] = markov[i*length : (i+1)*length]
+		for ii := range data[i] {
+			points[ii] = append(points[ii], Point{
+				Value: data[i][ii],
+				Index: i,
+			})
+		}
+	}
+	avg := make([]float64, length)
+	for _, v := range data {
+		for ii, value := range v {
+			avg[ii] += value
+		}
+	}
+	for i := range avg {
+		avg[i] /= float64(len(data))
+	}
+	stddev := make([]float64, length)
+	for _, v := range data {
+		for ii, value := range v {
+			diff := value - avg[ii]
+			stddev[ii] += diff * diff
+		}
+	}
+	for i := range stddev {
+		stddev[i] = math.Sqrt(stddev[i] / float64(len(data)))
+	}
+	type Column struct {
+		Index  int
+		Stddev float64
+	}
+	columns := make([]Column, length)
+	for i := range columns {
+		columns[i].Index = i
+		columns[i].Stddev = stddev[i]
+	}
+	sort.Slice(columns, func(i, j int) bool {
+		return columns[i].Stddev > columns[j].Stddev
+	})
+	s1 := reduction(points[columns[0].Index])
+	s2 := reduction(points[columns[0].Index][:s1])
+	s3 := reduction(points[columns[0].Index][s1:])
+	data2 := make([][]float64, length)
+	for i := range data2 {
+		for ii := range columns[:3] {
+			data2[i] = append(data2[i], markov[i*length+columns[ii].Index])
+		}
+	}
+	meta := make([][]float64, len(iris))
+	for i := range meta {
+		meta[i] = make([]float64, len(iris))
+	}
+	const k = 3
+	for i := 0; i < 33; i++ {
+		clusters, _, err := kmeans.Kmeans(int64(i+1), data2, k, kmeans.SquaredEuclideanDistance, -1)
+		if err != nil {
+			panic(err)
+		}
+		for i := 0; i < len(meta); i++ {
+			target := clusters[i]
+			for j, v := range clusters {
+				if v == target {
+					meta[i][j]++
+				}
+			}
+		}
+	}
+	clusters, _, err := kmeans.Kmeans(1, meta, 3, kmeans.SquaredEuclideanDistance, -1)
+	if err != nil {
+		panic(err)
+	}
+	for i, value := range clusters {
+		iris[i].Cluster = value
+	}
+	sort.Slice(iris, func(i, j int) bool {
+		return iris[i].Cluster < iris[j].Cluster
+	})
+	acc := make(map[string][3]int)
+	for i := range iris {
+		fmt.Println(iris[i].Cluster, iris[i].Label)
+		counts := acc[iris[i].Label]
+		counts[iris[i].Cluster]++
+		acc[iris[i].Label] = counts
+	}
+	for i, v := range acc {
+		fmt.Println(i, v)
+	}
+	fmt.Println(s1, s2, s3)
+	for i := range s1 {
+		fmt.Println(0, iris[points[columns[0].Index][i].Index].Label)
+	}
+	for i := s1; i < s1+s3; i++ {
+		fmt.Println(1, iris[points[columns[0].Index][i].Index].Label)
+	}
+	for i := s1 + s3; i < len(iris); i++ {
+		fmt.Println(2, iris[points[columns[0].Index][i].Index].Label)
+	}
+
+}
+
 func main() {
 	flag.Parse()
 
 	if *FlagAutoEncoder {
 		AutoEncoderMode()
+		return
+	}
+
+	if *FlagMPR {
+		MPRMode()
 		return
 	}
 
@@ -328,201 +541,6 @@ func main() {
 	}
 
 	if *FlagMPR {
-		rng := rand.New(rand.NewSource(1))
-		iris := Load()
-		length := len(iris)
-		/*for i := range iris {
-			max := 0.0
-			for _, value := range iris[i].Measures {
-				if value > max {
-					max = value
-				}
-			}
-			for ii, value := range iris[i].Measures {
-				iris[i].Measures[ii] = value / max
-			}
-		}*/
-		adj := make([]float64, length*length)
-		for i := range length {
-			for ii := range length {
-				adj[i*length+ii] = dot(iris[i].Measures, iris[ii].Measures)
-			}
-		}
-		for i := range length {
-			sum := 0.0
-			a := adj[i*length : (i+1)*length]
-			for _, value := range a {
-				sum += value
-			}
-			for ii := range a {
-				a[ii] /= sum
-			}
-		}
-		markov := make([]float64, length*length)
-		node := 0
-		for range 8 * 1024 * 1024 {
-			total, selected := 0.0, rng.Float64()
-			a := adj[node*length : (node+1)*length]
-			for i, value := range a {
-				total += value
-				if selected < total {
-					markov[i*length+node]++
-					node = i
-					break
-				}
-			}
-		}
-
-		type Point struct {
-			Value float64
-			Index int
-		}
-		reduction := func(points []Point) int {
-			sort.Slice(points, func(i, j int) bool {
-				return points[i].Value < points[j].Value
-			})
-			varab := 0.0
-			avgab := 0.0
-			for _, v := range points {
-				avgab += v.Value
-			}
-			avgab /= float64(len(points))
-			for _, v := range points {
-				diff := avgab - v.Value
-				varab += diff * diff
-			}
-			varab /= float64(len(points))
-			max, index := 0.0, 0
-			for i := 1; i < len(points)-1; i++ {
-				vara, varb := 0.0, 0.0
-				avga, avgb := 0.0, 0.0
-				ca, cb := 0.0, 0.0
-				for _, value := range points[:i] {
-					avga += value.Value
-					ca++
-				}
-				avga /= ca
-				for _, value := range points[i:] {
-					avgb += value.Value
-					cb++
-				}
-				avgb /= cb
-				for _, value := range points[:i] {
-					diff := avga - value.Value
-					vara += diff * diff
-				}
-				vara /= ca
-				for _, value := range points[i:] {
-					diff := avgb - value.Value
-					varb += diff * diff
-				}
-				varb /= cb
-				if diff := varab - (vara + varb); diff > max {
-					max, index = diff, i
-				}
-			}
-			return index
-		}
-		points := make([][]Point, length)
-		data := make([][]float64, length)
-		for i := range data {
-			data[i] = markov[i*length : (i+1)*length]
-			for ii := range data[i] {
-				points[ii] = append(points[ii], Point{
-					Value: data[i][ii],
-					Index: i,
-				})
-			}
-		}
-		avg := make([]float64, length)
-		for _, v := range data {
-			for ii, value := range v {
-				avg[ii] += value
-			}
-		}
-		for i := range avg {
-			avg[i] /= float64(len(data))
-		}
-		stddev := make([]float64, length)
-		for _, v := range data {
-			for ii, value := range v {
-				diff := value - avg[ii]
-				stddev[ii] += diff * diff
-			}
-		}
-		for i := range stddev {
-			stddev[i] = math.Sqrt(stddev[i] / float64(len(data)))
-		}
-		type Column struct {
-			Index  int
-			Stddev float64
-		}
-		columns := make([]Column, length)
-		for i := range columns {
-			columns[i].Index = i
-			columns[i].Stddev = stddev[i]
-		}
-		sort.Slice(columns, func(i, j int) bool {
-			return columns[i].Stddev > columns[j].Stddev
-		})
-		s1 := reduction(points[columns[0].Index])
-		s2 := reduction(points[columns[0].Index][:s1])
-		s3 := reduction(points[columns[0].Index][s1:])
-		data2 := make([][]float64, length)
-		for i := range data2 {
-			for ii := range columns[:3] {
-				data2[i] = append(data2[i], markov[i*length+columns[ii].Index])
-			}
-		}
-		meta := make([][]float64, len(iris))
-		for i := range meta {
-			meta[i] = make([]float64, len(iris))
-		}
-		const k = 3
-		for i := 0; i < 33; i++ {
-			clusters, _, err := kmeans.Kmeans(int64(i+1), data2, k, kmeans.SquaredEuclideanDistance, -1)
-			if err != nil {
-				panic(err)
-			}
-			for i := 0; i < len(meta); i++ {
-				target := clusters[i]
-				for j, v := range clusters {
-					if v == target {
-						meta[i][j]++
-					}
-				}
-			}
-		}
-		clusters, _, err := kmeans.Kmeans(1, meta, 3, kmeans.SquaredEuclideanDistance, -1)
-		if err != nil {
-			panic(err)
-		}
-		for i, value := range clusters {
-			iris[i].Cluster = value
-		}
-		sort.Slice(iris, func(i, j int) bool {
-			return iris[i].Cluster < iris[j].Cluster
-		})
-		acc := make(map[string][3]int)
-		for i := range iris {
-			fmt.Println(iris[i].Cluster, iris[i].Label)
-			counts := acc[iris[i].Label]
-			counts[iris[i].Cluster]++
-			acc[iris[i].Label] = counts
-		}
-		for i, v := range acc {
-			fmt.Println(i, v)
-		}
-		fmt.Println(s1, s2, s3)
-		for i := range s1 {
-			fmt.Println(0, iris[points[columns[0].Index][i].Index].Label)
-		}
-		for i := s1; i < s1+s3; i++ {
-			fmt.Println(1, iris[points[columns[0].Index][i].Index].Label)
-		}
-		for i := s1 + s3; i < len(iris); i++ {
-			fmt.Println(2, iris[points[columns[0].Index][i].Index].Label)
-		}
 
 		return
 	}
