@@ -137,6 +137,8 @@ var (
 	FlagAutoEncoder = flag.Bool("ae", false, "autoencoder mode")
 	// FlagMPR is the markov page rank mode
 	FlagMPR = flag.Bool("mpr", false, "markov page rank mode")
+	// FlagM1PR is the order 1 markov page rank mode
+	FlagM1PR = flag.Bool("m1pr", false, "order 1 markov page rank mode")
 )
 
 // AutoEncoderMode is the autoencoder mode
@@ -480,7 +482,107 @@ func MPRMode() {
 	for i := s1 + s3; i < len(iris); i++ {
 		fmt.Println(2, iris[points[columns[0].Index][i].Index].Label)
 	}
+}
 
+// M1PR is the order 1 markov page rank model
+func M1PRMode() {
+	dot := func(a, b []float64) float64 {
+		x := 0.0
+		for i, value := range a {
+			x += value * b[i]
+		}
+		return x
+	}
+
+	rng := rand.New(rand.NewSource(1))
+	iris := Load()
+	length := len(iris)
+	/*for i := range iris {
+		max := 0.0
+		for _, value := range iris[i].Measures {
+			if value > max {
+				max = value
+			}
+		}
+		for ii, value := range iris[i].Measures {
+			iris[i].Measures[ii] = value / max
+		}
+	}*/
+	type Node struct {
+		Weights []float64
+		Markov  [][]float64
+	}
+	nodes := make([]Node, length)
+	for i := range nodes {
+		nodes[i].Weights = make([]float64, length)
+		for ii := range nodes[i].Weights {
+			nodes[i].Weights[ii] = dot(iris[i].Measures, iris[ii].Measures)
+		}
+		sum := 0.0
+		for _, value := range nodes[i].Weights {
+			sum += value
+		}
+		for ii := range nodes[i].Weights {
+			nodes[i].Weights[ii] /= sum
+		}
+		nodes[i].Markov = make([][]float64, length)
+		for ii := range nodes[i].Markov {
+			nodes[i].Markov[ii] = make([]float64, length)
+		}
+	}
+
+	node, previous := 0, 0
+	for range 512 * 1024 * 1024 {
+		total, selected := 0.0, rng.Float64()
+		for i, value := range nodes[node].Weights {
+			total += value
+			if selected < total {
+				nodes[i].Markov[node][previous]++
+				node, previous = i, node
+				break
+			}
+		}
+	}
+
+	meta := make([][]float64, len(iris))
+	for i := range meta {
+		meta[i] = make([]float64, len(iris))
+	}
+	const k = 3
+	for i := range nodes {
+		clusters, _, err := kmeans.Kmeans(int64(i+1), nodes[i].Markov, k, kmeans.SquaredEuclideanDistance, -1)
+		if err != nil {
+			panic(err)
+		}
+		for i := 0; i < len(meta); i++ {
+			target := clusters[i]
+			for j, v := range clusters {
+				if v == target {
+					meta[i][j]++
+				}
+			}
+		}
+	}
+	clusters, _, err := kmeans.Kmeans(1, meta, 3, kmeans.SquaredEuclideanDistance, -1)
+	if err != nil {
+		panic(err)
+	}
+	for i, value := range clusters {
+		iris[i].Cluster = value
+	}
+	sort.Slice(iris, func(i, j int) bool {
+		return iris[i].Cluster < iris[j].Cluster
+	})
+	acc := make(map[string][3]int)
+	for i := range iris {
+		fmt.Println(iris[i].Cluster, iris[i].Label)
+		counts := acc[iris[i].Label]
+		counts[iris[i].Cluster]++
+		acc[iris[i].Label] = counts
+	}
+	for i, v := range acc {
+		fmt.Println(i, v)
+	}
 }
 
 func main() {
@@ -493,6 +595,11 @@ func main() {
 
 	if *FlagMPR {
 		MPRMode()
+		return
+	}
+
+	if *FlagM1PR {
+		M1PRMode()
 		return
 	}
 
