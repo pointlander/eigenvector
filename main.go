@@ -135,6 +135,8 @@ func Random(seed int64) []Fisher {
 var (
 	// FlagAutoEncoder is the autoencoder mode
 	FlagAutoEncoder = flag.Bool("ae", false, "autoencoder mode")
+	// FlagInverseSelfAttention is the inverse self attention mode
+	FlagInverseSelfAttention = flag.Bool("isa", false, "inverse self attention mode")
 	// FlagMPR is the markov page rank mode
 	FlagMPR = flag.Bool("mpr", false, "markov page rank mode")
 	// FlagM1PR is the order 1 markov page rank mode
@@ -275,6 +277,141 @@ func AutoEncoderMode() {
 	for i := range iris {
 		fmt.Println(iris[i].Cluster, iris[i].Label)
 	}
+}
+
+// InverseSelfAttentionMode is the inverse self attention mode
+func InverseSelfAttentionMode() {
+	const (
+		Eta = 1.0e-3
+	)
+	rng := rand.New(rand.NewSource(1))
+	iris := Load()
+	others := tf64.NewSet()
+	others.Add("x", 4, len(iris))
+	x := others.ByName["x"]
+	for _, row := range iris {
+		x.X = append(x.X, row.Measures...)
+	}
+
+	set := tf64.NewSet()
+	set.Add("a", len(iris), len(iris))
+
+	for ii := range set.Weights {
+		w := set.Weights[ii]
+		if strings.HasPrefix(w.N, "b") {
+			w.X = w.X[:cap(w.X)]
+			w.States = make([][]float64, StateTotal)
+			for ii := range w.States {
+				w.States[ii] = make([]float64, len(w.X))
+			}
+			continue
+		}
+		factor := math.Sqrt(2.0 / float64(w.S[0]))
+		for range cap(w.X) {
+			w.X = append(w.X, rng.NormFloat64()*factor)
+		}
+		w.States = make([][]float64, StateTotal)
+		for ii := range w.States {
+			w.States[ii] = make([]float64, len(w.X))
+		}
+	}
+
+	/*drop := .3
+	dropout := map[string]interface{}{
+		"rng":  rng,
+		"drop": &drop,
+	}*/
+
+	sa := tf64.T(tf64.Mul(set.Get("a"), tf64.T(others.Get("x"))))
+	loss := tf64.Avg(tf64.Quadratic(others.Get("x"), sa))
+
+	for iteration := range 256 {
+		pow := func(x float64) float64 {
+			y := math.Pow(x, float64(iteration+1))
+			if math.IsNaN(y) || math.IsInf(y, 0) {
+				return 0
+			}
+			return y
+		}
+
+		set.Zero()
+		l := tf64.Gradient(loss).X[0]
+		if math.IsNaN(float64(l)) || math.IsInf(float64(l), 0) {
+			fmt.Println(iteration, l)
+			return
+		}
+
+		norm := 0.0
+		for _, p := range set.Weights {
+			for _, d := range p.D {
+				norm += d * d
+			}
+		}
+		norm = math.Sqrt(norm)
+		b1, b2 := pow(B1), pow(B2)
+		scaling := 1.0
+		if norm > 1 {
+			scaling = 1 / norm
+		}
+		for _, w := range set.Weights {
+			for ii, d := range w.D {
+				g := d * scaling
+				m := B1*w.States[StateM][ii] + (1-B1)*g
+				v := B2*w.States[StateV][ii] + (1-B2)*g*g
+				w.States[StateM][ii] = m
+				w.States[StateV][ii] = v
+				mhat := m / (1 - b1)
+				vhat := v / (1 - b2)
+				if vhat < 0 {
+					vhat = 0
+				}
+				w.X[ii] -= Eta * mhat / (math.Sqrt(vhat) + 1e-8)
+			}
+		}
+		fmt.Println(l)
+	}
+
+	/*vectors := make([][]float64, len(iris))
+	for i := range vectors {
+		row := make([]float64, 4)
+		for ii := range row {
+			row[ii] = a.X[i*4+ii]
+		}
+		vectors[i] = row
+	}
+
+	meta := make([][]float64, len(iris))
+	for i := range meta {
+		meta[i] = make([]float64, len(iris))
+	}
+	const k = 3
+	for i := 0; i < 33; i++ {
+		clusters, _, err := kmeans.Kmeans(int64(i+1), vectors, k, kmeans.SquaredEuclideanDistance, -1)
+		if err != nil {
+			panic(err)
+		}
+		for i := 0; i < len(meta); i++ {
+			target := clusters[i]
+			for j, v := range clusters {
+				if v == target {
+					meta[i][j]++
+				}
+			}
+		}
+	}
+	clusters, _, err := kmeans.Kmeans(1, meta, 3, kmeans.SquaredEuclideanDistance, -1)
+	if err != nil {
+		panic(err)
+	}
+	for i := range clusters {
+		iris[i].Cluster = clusters[i]
+	}
+	sort.Slice(iris, func(i, j int) bool {
+		return iris[i].Cluster < iris[j].Cluster
+	})
+	for i := range iris {
+		fmt.Println(iris[i].Cluster, iris[i].Label)
+	}*/
 }
 
 // MPRMode is the markov page rank mode
@@ -590,6 +727,11 @@ func main() {
 
 	if *FlagAutoEncoder {
 		AutoEncoderMode()
+		return
+	}
+
+	if *FlagInverseSelfAttention {
+		InverseSelfAttentionMode()
 		return
 	}
 
