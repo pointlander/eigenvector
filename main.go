@@ -294,7 +294,7 @@ func InverseSelfAttentionMode() {
 	}
 
 	set := tf64.NewSet()
-	set.Add("i", 4, len(iris))
+	set.Add("i", 4, 4)
 	set.Add("j", 4, len(iris))
 
 	for ii := range set.Weights {
@@ -317,7 +317,7 @@ func InverseSelfAttentionMode() {
 		}
 	}
 
-	sa := tf64.T(tf64.Mul(tf64.Mul(set.Get("i"), set.Get("j")), tf64.T(others.Get("x"))))
+	sa := tf64.T(tf64.Mul(tf64.Mul(tf64.Mul(set.Get("i"), set.Get("j")), set.Get("j")), tf64.T(others.Get("x"))))
 	loss := tf64.Avg(tf64.Quadratic(others.Get("x"), sa))
 
 	for iteration := range 2 * 1024 {
@@ -372,7 +372,7 @@ func InverseSelfAttentionMode() {
 	}
 	const k = 3
 
-	{
+	/*{
 		y := set.ByName["i"]
 		vectors := make([][]float64, len(iris))
 		for i := range vectors {
@@ -396,7 +396,7 @@ func InverseSelfAttentionMode() {
 				}
 			}
 		}
-	}
+	}*/
 	{
 		y := set.ByName["j"]
 		vectors := make([][]float64, len(iris))
