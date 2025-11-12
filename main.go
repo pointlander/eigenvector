@@ -294,8 +294,8 @@ func InverseSelfAttentionMode() {
 	}
 
 	set := tf64.NewSet()
-	set.Add("a", 4, len(iris))
-	set.Add("b", 4, len(iris))
+	set.Add("i", 4, len(iris))
+	set.Add("j", 4, len(iris))
 
 	for ii := range set.Weights {
 		w := set.Weights[ii]
@@ -309,7 +309,7 @@ func InverseSelfAttentionMode() {
 		}
 		factor := math.Sqrt(2.0 / float64(w.S[0]))
 		for range cap(w.X) {
-			w.X = append(w.X, rng.NormFloat64()*factor)
+			w.X = append(w.X, rng.NormFloat64()*factor*.01)
 		}
 		w.States = make([][]float64, StateTotal)
 		for ii := range w.States {
@@ -323,10 +323,10 @@ func InverseSelfAttentionMode() {
 		"drop": &drop,
 	}*/
 
-	sa := tf64.T(tf64.Mul(tf64.Mul(set.Get("a"), set.Get("b")), tf64.T(others.Get("x"))))
+	sa := tf64.T(tf64.Mul(tf64.Mul(set.Get("i"), set.Get("j")), tf64.T(others.Get("x"))))
 	loss := tf64.Avg(tf64.Quadratic(others.Get("x"), sa))
 
-	for iteration := range 256 {
+	for iteration := range 8 * 1024 {
 		pow := func(x float64) float64 {
 			y := math.Pow(x, float64(iteration+1))
 			if math.IsNaN(y) || math.IsInf(y, 0) {
