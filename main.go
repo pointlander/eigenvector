@@ -317,16 +317,10 @@ func InverseSelfAttentionMode() {
 		}
 	}
 
-	/*drop := .3
-	dropout := map[string]interface{}{
-		"rng":  rng,
-		"drop": &drop,
-	}*/
-
 	sa := tf64.T(tf64.Mul(tf64.Mul(set.Get("i"), set.Get("j")), tf64.T(others.Get("x"))))
 	loss := tf64.Avg(tf64.Quadratic(others.Get("x"), sa))
 
-	for iteration := range 8 * 1024 {
+	for iteration := range 2 * 1024 {
 		pow := func(x float64) float64 {
 			y := math.Pow(x, float64(iteration+1))
 			if math.IsNaN(y) || math.IsInf(y, 0) {
@@ -372,30 +366,58 @@ func InverseSelfAttentionMode() {
 		fmt.Println(l)
 	}
 
-	/*vectors := make([][]float64, len(iris))
-	for i := range vectors {
-		row := make([]float64, 4)
-		for ii := range row {
-			row[ii] = a.X[i*4+ii]
-		}
-		vectors[i] = row
-	}
-
 	meta := make([][]float64, len(iris))
 	for i := range meta {
 		meta[i] = make([]float64, len(iris))
 	}
 	const k = 3
-	for i := 0; i < 33; i++ {
-		clusters, _, err := kmeans.Kmeans(int64(i+1), vectors, k, kmeans.SquaredEuclideanDistance, -1)
-		if err != nil {
-			panic(err)
+
+	{
+		y := set.ByName["i"]
+		vectors := make([][]float64, len(iris))
+		for i := range vectors {
+			row := make([]float64, 4)
+			for ii := range row {
+				row[ii] = y.X[i*4+ii]
+			}
+			vectors[i] = row
 		}
-		for i := 0; i < len(meta); i++ {
-			target := clusters[i]
-			for j, v := range clusters {
-				if v == target {
-					meta[i][j]++
+		for i := 0; i < 33; i++ {
+			clusters, _, err := kmeans.Kmeans(int64(i+1), vectors, k, kmeans.SquaredEuclideanDistance, -1)
+			if err != nil {
+				panic(err)
+			}
+			for i := 0; i < len(meta); i++ {
+				target := clusters[i]
+				for j, v := range clusters {
+					if v == target {
+						meta[i][j]++
+					}
+				}
+			}
+		}
+	}
+	{
+		y := set.ByName["j"]
+		vectors := make([][]float64, len(iris))
+		for i := range vectors {
+			row := make([]float64, 4)
+			for ii := range row {
+				row[ii] = y.X[i*4+ii]
+			}
+			vectors[i] = row
+		}
+		for i := 0; i < 33; i++ {
+			clusters, _, err := kmeans.Kmeans(int64(i+1), vectors, k, kmeans.SquaredEuclideanDistance, -1)
+			if err != nil {
+				panic(err)
+			}
+			for i := 0; i < len(meta); i++ {
+				target := clusters[i]
+				for j, v := range clusters {
+					if v == target {
+						meta[i][j]++
+					}
 				}
 			}
 		}
@@ -410,9 +432,16 @@ func InverseSelfAttentionMode() {
 	sort.Slice(iris, func(i, j int) bool {
 		return iris[i].Cluster < iris[j].Cluster
 	})
+	acc := make(map[string][3]int)
 	for i := range iris {
 		fmt.Println(iris[i].Cluster, iris[i].Label)
-	}*/
+		counts := acc[iris[i].Label]
+		counts[iris[i].Cluster]++
+		acc[iris[i].Label] = counts
+	}
+	for i, v := range acc {
+		fmt.Println(i, v)
+	}
 }
 
 // MPRMode is the markov page rank mode
