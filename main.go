@@ -282,7 +282,8 @@ func AutoEncoderMode() {
 // InverseSelfAttentionMode is the inverse self attention mode
 func InverseSelfAttentionMode() {
 	const (
-		Eta = 1.0e-3
+		Eta   = 1.0e-3
+		Width = 5
 	)
 	rng := rand.New(rand.NewSource(1))
 	iris := Load()
@@ -294,7 +295,7 @@ func InverseSelfAttentionMode() {
 	}
 
 	set := tf64.NewSet()
-	set.Add("i", 4, len(iris))
+	set.Add("i", Width, len(iris))
 
 	for ii := range set.Weights {
 		w := set.Weights[ii]
@@ -382,9 +383,9 @@ func InverseSelfAttentionMode() {
 		y := set.ByName["i"]
 		vectors := make([][]float64, len(iris))
 		for i := range vectors {
-			row := make([]float64, 4)
+			row := make([]float64, Width)
 			for ii := range row {
-				row[ii] = y.X[i*4+ii]
+				row[ii] = y.X[i*Width+ii]
 			}
 			vectors[i] = row
 		}
