@@ -294,8 +294,7 @@ func InverseSelfAttentionMode() {
 	}
 
 	set := tf64.NewSet()
-	set.Add("i", 4, 4)
-	set.Add("j", 4, len(iris))
+	set.Add("i", 4, len(iris))
 
 	for ii := range set.Weights {
 		w := set.Weights[ii]
@@ -317,7 +316,13 @@ func InverseSelfAttentionMode() {
 		}
 	}
 
-	sa := tf64.T(tf64.Mul(tf64.Mul(tf64.Mul(set.Get("i"), set.Get("j")), set.Get("j")), tf64.T(others.Get("x"))))
+	drop := .3
+	dropout := map[string]interface{}{
+		"rng":  rng,
+		"drop": &drop,
+	}
+
+	sa := tf64.T(tf64.Mul(tf64.Dropout(tf64.Mul(set.Get("i"), set.Get("i")), dropout), tf64.T(others.Get("x"))))
 	loss := tf64.Avg(tf64.Quadratic(others.Get("x"), sa))
 
 	for iteration := range 2 * 1024 {
@@ -330,6 +335,7 @@ func InverseSelfAttentionMode() {
 		}
 
 		set.Zero()
+		others.Zero()
 		l := tf64.Gradient(loss).X[0]
 		if math.IsNaN(float64(l)) || math.IsInf(float64(l), 0) {
 			fmt.Println(iteration, l)
@@ -372,33 +378,8 @@ func InverseSelfAttentionMode() {
 	}
 	const k = 3
 
-	/*{
-		y := set.ByName["i"]
-		vectors := make([][]float64, len(iris))
-		for i := range vectors {
-			row := make([]float64, 4)
-			for ii := range row {
-				row[ii] = y.X[i*4+ii]
-			}
-			vectors[i] = row
-		}
-		for i := 0; i < 33; i++ {
-			clusters, _, err := kmeans.Kmeans(int64(i+1), vectors, k, kmeans.SquaredEuclideanDistance, -1)
-			if err != nil {
-				panic(err)
-			}
-			for i := 0; i < len(meta); i++ {
-				target := clusters[i]
-				for j, v := range clusters {
-					if v == target {
-						meta[i][j]++
-					}
-				}
-			}
-		}
-	}*/
 	{
-		y := set.ByName["j"]
+		y := set.ByName["i"]
 		vectors := make([][]float64, len(iris))
 		for i := range vectors {
 			row := make([]float64, 4)
