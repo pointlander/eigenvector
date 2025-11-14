@@ -9,12 +9,14 @@ import (
 	"bytes"
 	"embed"
 	"encoding/csv"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"math"
 	"math/cmplx"
 	"math/rand"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -132,11 +134,56 @@ func Random(seed int64) []Fisher {
 	return fisher
 }
 
+// Example is a learning example
+type Example struct {
+	Input  [][]byte `json:"input"`
+	Output [][]byte `json:"output"`
+}
+
+// Set is a set of examples
+type Set struct {
+	Test  []Example `json:"test"`
+	Train []Example `json:"train"`
+}
+
+// Sets is many sets
+type Sets []Set
+
+// Load loads the data
+func LoadAA() Sets {
+	dirs, err := os.ReadDir("ARC-AGI/data/training/")
+	if err != nil {
+		panic(err)
+	}
+	sets := make(Sets, len(dirs))
+	for i, dir := range dirs {
+		data, err := os.ReadFile("ARC-AGI/data/training/" + dir.Name())
+		if err != nil {
+			panic(err)
+		}
+		err = json.Unmarshal(data, &sets[i])
+		if err != nil {
+			panic(err)
+		}
+	}
+	fmt.Println("loaded", len(sets))
+	test, train := 0, 0
+	for _, set := range sets {
+		test += len(set.Test)
+		train += len(set.Train)
+	}
+	fmt.Println("test", test)
+	fmt.Println("train", train)
+	return sets
+}
+
 var (
 	// FlagAutoEncoder is the autoencoder mode
 	FlagAutoEncoder = flag.Bool("ae", false, "autoencoder mode")
 	// FlagInverseSelfAttention is the inverse self attention mode
 	FlagInverseSelfAttention = flag.Bool("isa", false, "inverse self attention mode")
+	// FlagAA ARC-AGI 1 model
+	FlagAA = flag.Bool("aa", false, "ARC-AGI 1 model")
 	// FlagMPR is the markov page rank mode
 	FlagMPR = flag.Bool("mpr", false, "markov page rank mode")
 	// FlagM1PR is the order 1 markov page rank mode
@@ -424,6 +471,12 @@ func InverseSelfAttentionMode() {
 	for i, v := range acc {
 		fmt.Println(i, v)
 	}
+}
+
+// AAMode is the ARC-AGI 1 mode
+func AAMode() {
+	aa := LoadAA()
+	_ = aa
 }
 
 // MPRMode is the markov page rank mode
@@ -744,6 +797,11 @@ func main() {
 
 	if *FlagInverseSelfAttention {
 		InverseSelfAttentionMode()
+		return
+	}
+
+	if *FlagAA {
+		AAMode()
 		return
 	}
 
