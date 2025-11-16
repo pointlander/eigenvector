@@ -512,40 +512,38 @@ func AAMode() {
 			maxX = x
 		}
 	}
-
-	sets := make([]tf64.Set, len(aa[0].Train))
-	for s := range sets {
-		example := aa[0].Train[s].Input
-		others := tf64.NewSet()
-		others.Add("x", Symbols, maxX*maxY)
-		x := others.ByName["x"]
-		for y := range example {
-			for _, value := range example[y] {
+	load := func(x *tf64.V, input [][]byte) {
+		for y := range input {
+			for _, value := range input[y] {
 				row := make([]float64, Symbols)
 				row[value] = 1
 				x.X = append(x.X, row...)
 			}
-			for range maxX - len(example[y]) {
+			for range maxX - len(input[y]) {
 				row := make([]float64, Symbols)
 				row[10] = 1
 				x.X = append(x.X, row...)
 			}
 		}
-		for range maxY - len(example) {
+		for range maxY - len(input) {
 			for range maxX {
 				row := make([]float64, Symbols)
 				row[10] = 1
 				x.X = append(x.X, row...)
 			}
 		}
+	}
 
-		fmt.Println(maxX, maxY, maxX*maxY, len(x.X)/Symbols)
+	factor := func(set *tf64.Set, input [][]byte) {
+		others := tf64.NewSet()
+		others.Add("x", Symbols, maxX*maxY)
+		load(others.ByName["x"], input)
 
-		sets[s] = tf64.NewSet()
-		sets[s].Add("i", Width, maxX*maxY)
+		*set = tf64.NewSet()
+		set.Add("i", Width, maxX*maxY)
 
-		for ii := range sets[s].Weights {
-			w := sets[s].Weights[ii]
+		for ii := range set.Weights {
+			w := set.Weights[ii]
 			if strings.HasPrefix(w.N, "b") {
 				w.X = w.X[:cap(w.X)]
 				w.States = make([][]float64, StateTotal)
@@ -570,7 +568,7 @@ func AAMode() {
 			"drop": &drop,
 		}
 
-		sa := tf64.T(tf64.Mul(tf64.Dropout(tf64.Mul(sets[s].Get("i"), sets[s].Get("i")), dropout), tf64.T(others.Get("x"))))
+		sa := tf64.T(tf64.Mul(tf64.Dropout(tf64.Mul(set.Get("i"), set.Get("i")), dropout), tf64.T(others.Get("x"))))
 		loss := tf64.Avg(tf64.Quadratic(others.Get("x"), sa))
 
 		for iteration := range 2 * 1024 {
@@ -582,7 +580,7 @@ func AAMode() {
 				return y
 			}
 
-			sets[s].Zero()
+			set.Zero()
 			others.Zero()
 			l := tf64.Gradient(loss).X[0]
 			if math.IsNaN(float64(l)) || math.IsInf(float64(l), 0) {
@@ -591,7 +589,7 @@ func AAMode() {
 			}
 
 			norm := 0.0
-			for _, p := range sets[s].Weights {
+			for _, p := range set.Weights {
 				for _, d := range p.D {
 					norm += d * d
 				}
@@ -602,7 +600,7 @@ func AAMode() {
 			if norm > 1 {
 				scaling = 1 / norm
 			}
-			for _, w := range sets[s].Weights {
+			for _, w := range set.Weights {
 				for ii, d := range w.D {
 					g := d * scaling
 					m := B1*w.States[StateM][ii] + (1-B1)*g
@@ -619,6 +617,11 @@ func AAMode() {
 			}
 			fmt.Println(l)
 		}
+	}
+
+	sets := make([]tf64.Set, len(aa[0].Train))
+	for s := range sets {
+		factor(&sets[s], aa[0].Train[s].Input)
 	}
 
 	ff := tf64.NewSet()
@@ -652,29 +655,9 @@ func AAMode() {
 		perm := rng.Perm(len(sets))
 		for s := range sets {
 			s = perm[s]
-			example := aa[0].Train[s].Output
 			output := tf64.NewSet()
 			output.Add("o", Symbols, maxX*maxY)
-			o := output.ByName["o"]
-			for y := range example {
-				for _, value := range example[y] {
-					row := make([]float64, Symbols)
-					row[value] = 1
-					o.X = append(o.X, row...)
-				}
-				for range maxX - len(example[y]) {
-					row := make([]float64, Symbols)
-					row[10] = 1
-					o.X = append(o.X, row...)
-				}
-			}
-			for range maxY - len(example) {
-				for range maxX {
-					row := make([]float64, Symbols)
-					row[10] = 1
-					o.X = append(o.X, row...)
-				}
-			}
+			load(output.ByName["o"], aa[0].Train[s].Output)
 
 			l1 := tf64.Everett(tf64.Add(tf64.Mul(ff.Get("l1"), sets[s].Get("i")), ff.Get("b1")))
 			l2 := tf64.Add(tf64.Mul(ff.Get("l2"), l1), ff.Get("b2"))
