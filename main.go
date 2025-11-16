@@ -483,8 +483,9 @@ func AAMode() {
 	aa := LoadAA()
 
 	const (
-		Eta   = 1.0e-3
-		Width = 5
+		Eta     = 1.0e-3
+		Width   = 5
+		Symbols = 11
 	)
 	rng := rand.New(rand.NewSource(1))
 
@@ -516,27 +517,29 @@ func AAMode() {
 	for s := range sets {
 		example := aa[0].Train[s].Input
 		others := tf64.NewSet()
-		others.Add("x", 10, maxX*maxY)
+		others.Add("x", Symbols, maxX*maxY)
 		x := others.ByName["x"]
 		for y := range example {
 			for _, value := range example[y] {
-				row := make([]float64, 10)
+				row := make([]float64, Symbols)
 				row[value] = 1
 				x.X = append(x.X, row...)
 			}
 			for range maxX - len(example[y]) {
-				row := make([]float64, 10)
+				row := make([]float64, Symbols)
+				row[10] = 1
 				x.X = append(x.X, row...)
 			}
 		}
 		for range maxY - len(example) {
 			for range maxX {
-				row := make([]float64, 10)
+				row := make([]float64, Symbols)
+				row[10] = 1
 				x.X = append(x.X, row...)
 			}
 		}
 
-		fmt.Println(maxX, maxY, maxX*maxY, len(x.X)/10)
+		fmt.Println(maxX, maxY, maxX*maxY, len(x.X)/Symbols)
 
 		sets[s] = tf64.NewSet()
 		sets[s].Add("i", Width, maxX*maxY)
@@ -621,8 +624,8 @@ func AAMode() {
 	ff := tf64.NewSet()
 	ff.Add("l1", Width, Width)
 	ff.Add("b1", Width)
-	ff.Add("l2", 2*Width, 10)
-	ff.Add("b2", 10)
+	ff.Add("l2", 2*Width, Symbols)
+	ff.Add("b2", Symbols)
 
 	for ii := range ff.Weights {
 		w := ff.Weights[ii]
@@ -651,22 +654,24 @@ func AAMode() {
 			s = perm[s]
 			example := aa[0].Train[s].Output
 			output := tf64.NewSet()
-			output.Add("o", 10, maxX*maxY)
+			output.Add("o", Symbols, maxX*maxY)
 			o := output.ByName["o"]
 			for y := range example {
 				for _, value := range example[y] {
-					row := make([]float64, 10)
+					row := make([]float64, Symbols)
 					row[value] = 1
 					o.X = append(o.X, row...)
 				}
 				for range maxX - len(example[y]) {
-					row := make([]float64, 10)
+					row := make([]float64, Symbols)
+					row[10] = 1
 					o.X = append(o.X, row...)
 				}
 			}
 			for range maxY - len(example) {
 				for range maxX {
-					row := make([]float64, 10)
+					row := make([]float64, Symbols)
+					row[10] = 1
 					o.X = append(o.X, row...)
 				}
 			}
