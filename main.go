@@ -651,64 +651,64 @@ func AAMode() {
 	}
 
 	points := make(plotter.XYs, 0, 8)
-	for range 33 {
-		perm := rng.Perm(len(sets))
-		for s := range sets {
-			s = perm[s]
-			output := tf64.NewSet()
-			output.Add("o", Symbols, maxX*maxY)
-			load(output.ByName["o"], aa[0].Train[s].Output)
+	output := tf64.NewSet()
+	output.Add("i", Width, len(aa[0].Train)*maxX*maxY)
+	output.Add("o", Symbols, len(aa[0].Train)*maxX*maxY)
+	for s := range sets {
+		x := output.ByName["i"]
+		x.X = append(x.X, sets[s].ByName["i"].X...)
+		load(output.ByName["o"], aa[0].Train[s].Output)
+	}
+	{
+		l1 := tf64.Everett(tf64.Add(tf64.Mul(ff.Get("l1"), output.Get("i")), ff.Get("b1")))
+		l2 := tf64.Add(tf64.Mul(ff.Get("l2"), l1), ff.Get("b2"))
+		loss := tf64.Avg(tf64.Quadratic(output.Get("o"), l2))
 
-			l1 := tf64.Everett(tf64.Add(tf64.Mul(ff.Get("l1"), sets[s].Get("i")), ff.Get("b1")))
-			l2 := tf64.Add(tf64.Mul(ff.Get("l2"), l1), ff.Get("b2"))
-			loss := tf64.Avg(tf64.Quadratic(output.Get("o"), l2))
-
-			for iteration := range 2 * 1024 {
-				pow := func(x float64) float64 {
-					y := math.Pow(x, float64(iteration+1))
-					if math.IsNaN(y) || math.IsInf(y, 0) {
-						return 0
-					}
-					return y
+		for iteration := range 4 * 1024 {
+			pow := func(x float64) float64 {
+				y := math.Pow(x, float64(iteration+1))
+				if math.IsNaN(y) || math.IsInf(y, 0) {
+					return 0
 				}
-
-				sets[s].Zero()
-				ff.Zero()
-				l := tf64.Gradient(loss).X[0]
-				if math.IsNaN(float64(l)) || math.IsInf(float64(l), 0) {
-					fmt.Println(iteration, l)
-					return
-				}
-
-				norm := 0.0
-				for _, p := range ff.Weights {
-					for _, d := range p.D {
-						norm += d * d
-					}
-				}
-				norm = math.Sqrt(norm)
-				b1, b2 := pow(B1), pow(B2)
-				scaling := 1.0
-				if norm > 1 {
-					scaling = 1 / norm
-				}
-				for _, w := range ff.Weights {
-					for ii, d := range w.D {
-						g := d * scaling
-						m := B1*w.States[StateM][ii] + (1-B1)*g
-						v := B2*w.States[StateV][ii] + (1-B2)*g*g
-						w.States[StateM][ii] = m
-						w.States[StateV][ii] = v
-						mhat := m / (1 - b1)
-						vhat := v / (1 - b2)
-						if vhat < 0 {
-							vhat = 0
-						}
-						w.X[ii] -= Eta * mhat / (math.Sqrt(vhat) + 1e-8)
-					}
-				}
-				points = append(points, plotter.XY{X: float64(iteration), Y: float64(l)})
+				return y
 			}
+
+			output.Zero()
+			ff.Zero()
+			l := tf64.Gradient(loss).X[0]
+			if math.IsNaN(float64(l)) || math.IsInf(float64(l), 0) {
+				fmt.Println(iteration, l)
+				return
+			}
+
+			norm := 0.0
+			for _, p := range ff.Weights {
+				for _, d := range p.D {
+					norm += d * d
+				}
+			}
+			norm = math.Sqrt(norm)
+			b1, b2 := pow(B1), pow(B2)
+			scaling := 1.0
+			if norm > 1 {
+				scaling = 1 / norm
+			}
+			for _, w := range ff.Weights {
+				for ii, d := range w.D {
+					g := d * scaling
+					m := B1*w.States[StateM][ii] + (1-B1)*g
+					v := B2*w.States[StateV][ii] + (1-B2)*g*g
+					w.States[StateM][ii] = m
+					w.States[StateV][ii] = v
+					mhat := m / (1 - b1)
+					vhat := v / (1 - b2)
+					if vhat < 0 {
+						vhat = 0
+					}
+					w.X[ii] -= Eta * mhat / (math.Sqrt(vhat) + 1e-8)
+				}
+			}
+			points = append(points, plotter.XY{X: float64(iteration), Y: float64(l)})
 		}
 	}
 
