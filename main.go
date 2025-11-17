@@ -534,8 +534,35 @@ func AAMode() {
 		}
 	}
 
-	factor := func(set *tf64.Set, input [][]byte) {
-		others := tf64.NewSet()
+	auto := tf64.NewSet()
+	auto.Add("l1", Width, Width)
+	auto.Add("b1", Width)
+	auto.Add("l2", 2*Width, Symbols)
+	auto.Add("b2", Symbols)
+	for ii := range auto.Weights {
+		w := auto.Weights[ii]
+		if strings.HasPrefix(w.N, "b") {
+			w.X = w.X[:cap(w.X)]
+			w.States = make([][]float64, StateTotal)
+			for ii := range w.States {
+				w.States[ii] = make([]float64, len(w.X))
+			}
+			continue
+		}
+		factor := math.Sqrt(2.0 / float64(w.S[0]))
+		for range cap(w.X) {
+			w.X = append(w.X, rng.NormFloat64()*factor*.01)
+		}
+		w.States = make([][]float64, StateTotal)
+		for ii := range w.States {
+			w.States[ii] = make([]float64, len(w.X))
+		}
+	}
+	var loss tf64.Meta
+
+	factor := func(seed int64, set *tf64.Set, others *tf64.Set, input [][]byte) {
+		rng := rand.New(rand.NewSource(seed))
+		*others = tf64.NewSet()
 		others.Add("x", Symbols, maxX*maxY)
 		load(others.ByName["x"], input)
 
@@ -562,16 +589,41 @@ func AAMode() {
 			}
 		}
 
-		drop := .3
+		drop := .7
 		dropout := map[string]interface{}{
 			"rng":  rng,
 			"drop": &drop,
 		}
 
 		sa := tf64.T(tf64.Mul(tf64.Dropout(tf64.Mul(set.Get("i"), set.Get("i")), dropout), tf64.T(others.Get("x"))))
-		loss := tf64.Avg(tf64.Quadratic(others.Get("x"), sa))
+		l := tf64.Avg(tf64.Quadratic(others.Get("x"), sa))
 
-		for iteration := range 2 * 1024 {
+		l1 := tf64.Everett(tf64.Add(tf64.Mul(auto.Get("l1"), set.Get("i")), auto.Get("b1")))
+		l2 := tf64.Add(tf64.Mul(auto.Get("l2"), l1), auto.Get("b2"))
+		al := tf64.Avg(tf64.Quadratic(others.Get("x"), l2))
+
+		if loss == nil {
+			loss = tf64.Hadamard(l, al)
+		} else {
+			loss = tf64.Hadamard(loss, tf64.Hadamard(l, al))
+		}
+	}
+
+	sets := make([]tf64.Set, len(aa[0].Train)+len(aa[0].Test))
+	others := make([]tf64.Set, len(aa[0].Train)+len(aa[0].Test))
+	for s := range len(aa[0].Train) {
+		factor(rng.Int63(), &sets[s], &others[s], aa[0].Train[s].Input)
+	}
+	offset := len(aa[0].Train)
+	for s := range len(aa[0].Test) {
+		factor(rng.Int63(), &sets[offset+s], &others[offset+s], aa[0].Test[s].Input)
+	}
+	{
+		const (
+			Eta = 1.0e-4
+		)
+		points := make(plotter.XYs, 0, 8)
+		for iteration := range 1024 {
 			pow := func(x float64) float64 {
 				y := math.Pow(x, float64(iteration+1))
 				if math.IsNaN(y) || math.IsInf(y, 0) {
@@ -580,8 +632,10 @@ func AAMode() {
 				return y
 			}
 
-			set.Zero()
-			others.Zero()
+			for i := range sets {
+				sets[i].Zero()
+				others[i].Zero()
+			}
 			l := tf64.Gradient(loss).X[0]
 			if math.IsNaN(float64(l)) || math.IsInf(float64(l), 0) {
 				fmt.Println(iteration, l)
@@ -589,40 +643,62 @@ func AAMode() {
 			}
 
 			norm := 0.0
-			for _, p := range set.Weights {
-				for _, d := range p.D {
-					norm += d * d
-				}
-			}
-			norm = math.Sqrt(norm)
-			b1, b2 := pow(B1), pow(B2)
-			scaling := 1.0
-			if norm > 1 {
-				scaling = 1 / norm
-			}
-			for _, w := range set.Weights {
-				for ii, d := range w.D {
-					g := d * scaling
-					m := B1*w.States[StateM][ii] + (1-B1)*g
-					v := B2*w.States[StateV][ii] + (1-B2)*g*g
-					w.States[StateM][ii] = m
-					w.States[StateV][ii] = v
-					mhat := m / (1 - b1)
-					vhat := v / (1 - b2)
-					if vhat < 0 {
-						vhat = 0
+			for i := range sets {
+				for _, p := range sets[i].Weights {
+					for _, d := range p.D {
+						norm += d * d
 					}
-					w.X[ii] -= Eta * mhat / (math.Sqrt(vhat) + 1e-8)
+				}
+				norm = math.Sqrt(norm)
+				b1, b2 := pow(B1), pow(B2)
+				scaling := 1.0
+				if norm > 1 {
+					scaling = 1 / norm
+				}
+				for _, w := range sets[i].Weights {
+					for ii, d := range w.D {
+						g := d * scaling
+						m := B1*w.States[StateM][ii] + (1-B1)*g
+						v := B2*w.States[StateV][ii] + (1-B2)*g*g
+						w.States[StateM][ii] = m
+						w.States[StateV][ii] = v
+						mhat := m / (1 - b1)
+						vhat := v / (1 - b2)
+						if vhat < 0 {
+							vhat = 0
+						}
+						w.X[ii] -= Eta * mhat / (math.Sqrt(vhat) + 1e-8)
+					}
 				}
 			}
-			fmt.Println(l)
+			points = append(points, plotter.XY{X: float64(iteration), Y: float64(l)})
 		}
+
+		p := plot.New()
+
+		p.Title.Text = "epochs vs cost"
+		p.X.Label.Text = "epochs"
+		p.Y.Label.Text = "cost"
+
+		scatter, err := plotter.NewScatter(points)
+		if err != nil {
+			panic(err)
+		}
+		scatter.GlyphStyle.Radius = vg.Length(1)
+		scatter.GlyphStyle.Shape = draw.CircleGlyph{}
+		p.Add(scatter)
+
+		err = p.Save(8*vg.Inch, 8*vg.Inch, "aepochs.png")
+		if err != nil {
+			panic(err)
+		}
+
 	}
 
-	sets := make([]tf64.Set, len(aa[0].Train))
+	/*sets := make([]tf64.Set, len(aa[0].Train))
 	for s := range sets {
 		factor(&sets[s], aa[0].Train[s].Input)
-	}
+	}*/
 
 	ff := tf64.NewSet()
 	ff.Add("l1", Width, Width)
@@ -654,7 +730,7 @@ func AAMode() {
 	output := tf64.NewSet()
 	output.Add("i", Width, len(aa[0].Train)*maxX*maxY)
 	output.Add("o", Symbols, len(aa[0].Train)*maxX*maxY)
-	for s := range sets {
+	for s := range sets[:offset] {
 		x := output.ByName["i"]
 		x.X = append(x.X, sets[s].ByName["i"].X...)
 		load(output.ByName["o"], aa[0].Train[s].Output)
@@ -731,12 +807,12 @@ func AAMode() {
 		panic(err)
 	}
 
-	tests := make([]tf64.Set, len(aa[0].Test))
+	/*tests := make([]tf64.Set, len(aa[0].Test))
 	for s := range tests {
 		factor(&tests[s], aa[0].Test[s].Input)
-	}
-	for s := range tests {
-		l1 := tf64.Everett(tf64.Add(tf64.Mul(ff.Get("l1"), tests[s].Get("i")), ff.Get("b1")))
+	}*/
+	for s := range sets[offset:] {
+		l1 := tf64.Everett(tf64.Add(tf64.Mul(ff.Get("l1"), sets[offset+s].Get("i")), ff.Get("b1")))
 		l2 := tf64.Add(tf64.Mul(ff.Get("l2"), l1), ff.Get("b2"))
 		l2(func(a *tf64.V) bool {
 			for i := range maxY {
