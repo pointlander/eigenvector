@@ -623,7 +623,7 @@ func AAMode() {
 			Eta = 1.0e-4
 		)
 		points := make(plotter.XYs, 0, 8)
-		for iteration := range 1024 {
+		for iteration := range 2 * 1024 {
 			pow := func(x float64) float64 {
 				y := math.Pow(x, float64(iteration+1))
 				if math.IsNaN(y) || math.IsInf(y, 0) {
@@ -740,7 +740,7 @@ func AAMode() {
 		l2 := tf64.Add(tf64.Mul(ff.Get("l2"), l1), ff.Get("b2"))
 		loss := tf64.Avg(tf64.Quadratic(output.Get("o"), l2))
 
-		for iteration := range 4 * 1024 {
+		for iteration := range 64 * 1024 {
 			pow := func(x float64) float64 {
 				y := math.Pow(x, float64(iteration+1))
 				if math.IsNaN(y) || math.IsInf(y, 0) {
