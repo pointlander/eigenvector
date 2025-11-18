@@ -481,6 +481,13 @@ func InverseSelfAttentionMode() {
 // AAMode is the ARC-AGI 1 mode
 func AAMode() {
 	aa := LoadAA()
+	for i := range aa[0].Train {
+		fmt.Println(aa[0].Train[i].Input)
+	}
+	fmt.Println()
+	for i := range aa[0].Test {
+		fmt.Println(aa[0].Test[i].Input)
+	}
 
 	const (
 		Eta     = 1.0e-3
@@ -623,7 +630,7 @@ func AAMode() {
 			Eta = 1.0e-4
 		)
 		points := make(plotter.XYs, 0, 8)
-		for iteration := range 2 * 1024 {
+		for iteration := range 1024 {
 			pow := func(x float64) float64 {
 				y := math.Pow(x, float64(iteration+1))
 				if math.IsNaN(y) || math.IsInf(y, 0) {
@@ -673,6 +680,7 @@ func AAMode() {
 			}
 			points = append(points, plotter.XY{X: float64(iteration), Y: float64(l)})
 		}
+		fmt.Println(points[len(points)-1])
 
 		p := plot.New()
 
@@ -740,7 +748,7 @@ func AAMode() {
 		l2 := tf64.Add(tf64.Mul(ff.Get("l2"), l1), ff.Get("b2"))
 		loss := tf64.Avg(tf64.Quadratic(output.Get("o"), l2))
 
-		for iteration := range 64 * 1024 {
+		for iteration := range 1024 {
 			pow := func(x float64) float64 {
 				y := math.Pow(x, float64(iteration+1))
 				if math.IsNaN(y) || math.IsInf(y, 0) {
@@ -787,6 +795,7 @@ func AAMode() {
 			points = append(points, plotter.XY{X: float64(iteration), Y: float64(l)})
 		}
 	}
+	fmt.Println(points[len(points)-1])
 
 	p := plot.New()
 
