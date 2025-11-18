@@ -649,8 +649,8 @@ func AAMode() {
 				return
 			}
 
-			norm := 0.0
 			for i := range sets {
+				norm := 0.0
 				for _, p := range sets[i].Weights {
 					for _, d := range p.D {
 						norm += d * d
