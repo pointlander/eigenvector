@@ -3,7 +3,7 @@ module github.com/pointlander/eigenvector
 go 1.25.0
 
 require (
-	github.com/pointlander/gradient v0.0.0-20250814141955-1993bf0b47d3
+	github.com/pointlander/gradient v0.0.0-20251118233219-ed595573b8de
 	gonum.org/v1/gonum v0.16.0
 	gonum.org/v1/plot v0.15.2
 )

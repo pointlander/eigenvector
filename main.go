@@ -375,7 +375,7 @@ func InverseSelfAttentionMode() {
 		"drop": &drop,
 	}
 
-	sa := tf64.T(tf64.Mul(tf64.Dropout(tf64.Mul(set.Get("i"), set.Get("i")), dropout), tf64.T(others.Get("x"))))
+	sa := tf64.T(tf64.Mul(tf64.Dropout(tf64.MulS(set.Get("i"), set.Get("i")), dropout), tf64.T(others.Get("x"))))
 	loss := tf64.Avg(tf64.Quadratic(others.Get("x"), sa))
 
 	for iteration := range 2 * 1024 {
@@ -602,7 +602,7 @@ func AAMode() {
 			"drop": &drop,
 		}
 
-		sa := tf64.T(tf64.Mul(tf64.Dropout(tf64.Mul(set.Get("i"), set.Get("i")), dropout), tf64.T(others.Get("x"))))
+		sa := tf64.T(tf64.Mul(tf64.Dropout(tf64.MulS(set.Get("i"), set.Get("i")), dropout), tf64.T(others.Get("x"))))
 		l := tf64.Avg(tf64.Quadratic(others.Get("x"), sa))
 
 		l1 := tf64.Everett(tf64.Add(tf64.Mul(auto.Get("l1"), set.Get("i")), auto.Get("b1")))
@@ -710,6 +710,8 @@ func AAMode() {
 			}
 			points = append(points, plotter.XY{X: float64(iteration), Y: float64(l)})
 		}
+		fmt.Println(points[0])
+		fmt.Println(points[1])
 		fmt.Println(points[len(points)-1])
 
 		p := plot.New()
