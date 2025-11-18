@@ -639,6 +639,7 @@ func AAMode() {
 				return y
 			}
 
+			auto.Zero()
 			for i := range sets {
 				sets[i].Zero()
 				others[i].Zero()
@@ -649,6 +650,35 @@ func AAMode() {
 				return
 			}
 
+			{
+				norm := 0.0
+				for _, p := range auto.Weights {
+					for _, d := range p.D {
+						norm += d * d
+					}
+				}
+				norm = math.Sqrt(norm)
+				b1, b2 := pow(B1), pow(B2)
+				scaling := 1.0
+				if norm > 1 {
+					scaling = 1 / norm
+				}
+				for _, w := range auto.Weights {
+					for ii, d := range w.D {
+						g := d * scaling
+						m := B1*w.States[StateM][ii] + (1-B1)*g
+						v := B2*w.States[StateV][ii] + (1-B2)*g*g
+						w.States[StateM][ii] = m
+						w.States[StateV][ii] = v
+						mhat := m / (1 - b1)
+						vhat := v / (1 - b2)
+						if vhat < 0 {
+							vhat = 0
+						}
+						w.X[ii] -= Eta * mhat / (math.Sqrt(vhat) + 1e-8)
+					}
+				}
+			}
 			for i := range sets {
 				norm := 0.0
 				for _, p := range sets[i].Weights {
