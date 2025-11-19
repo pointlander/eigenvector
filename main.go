@@ -481,13 +481,6 @@ func InverseSelfAttentionMode() {
 // AAMode is the ARC-AGI 1 mode
 func AAMode() {
 	aa := LoadAA()
-	for i := range aa[0].Train {
-		fmt.Println(aa[0].Train[i].Input)
-	}
-	fmt.Println()
-	for i := range aa[0].Test {
-		fmt.Println(aa[0].Test[i].Input)
-	}
 
 	const (
 		Eta     = 1.0e-3
@@ -710,9 +703,6 @@ func AAMode() {
 			}
 			points = append(points, plotter.XY{X: float64(iteration), Y: float64(l)})
 		}
-		fmt.Println(points[0])
-		fmt.Println(points[1])
-		fmt.Println(points[len(points)-1])
 
 		p := plot.New()
 
@@ -827,7 +817,6 @@ func AAMode() {
 			points = append(points, plotter.XY{X: float64(iteration), Y: float64(l)})
 		}
 	}
-	fmt.Println(points[len(points)-1])
 
 	p := plot.New()
 
