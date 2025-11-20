@@ -842,6 +842,7 @@ func AAMode() {
 		factor(&tests[s], aa[0].Test[s].Input)
 	}*/
 	index := 0
+	count := 0
 	for _, set := range [][]Example{aa[0].Train, aa[0].Test} {
 		for s := range set {
 			fmt.Println("input")
@@ -883,6 +884,7 @@ func AAMode() {
 			fmt.Println("infer")
 			l1 := tf64.Everett(tf64.Add(tf64.Mul(ff.Get("l1"), sets[index].Get("i")), ff.Get("b1")))
 			l2 := tf64.Add(tf64.Mul(ff.Get("l2"), l1), ff.Get("b2"))
+			correct := true
 			l2(func(a *tf64.V) bool {
 				for i := range maxY {
 					for ii := range maxX {
@@ -895,6 +897,9 @@ func AAMode() {
 						if symbol == 10 {
 							fmt.Printf("U")
 						} else {
+							if int(output[i][ii]) != symbol {
+								correct = false
+							}
 							fmt.Printf("%c", symbol+'0')
 						}
 					}
@@ -903,9 +908,13 @@ func AAMode() {
 				return true
 			})
 			fmt.Println()
+			if correct {
+				count++
+			}
 			index++
 		}
 	}
+	fmt.Println(count)
 }
 
 // MPRMode is the markov page rank mode
