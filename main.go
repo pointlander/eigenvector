@@ -841,44 +841,69 @@ func AAMode() {
 	for s := range tests {
 		factor(&tests[s], aa[0].Test[s].Input)
 	}*/
-	for s := range sets[offset:] {
-		l1 := tf64.Everett(tf64.Add(tf64.Mul(ff.Get("l1"), sets[offset+s].Get("i")), ff.Get("b1")))
-		l2 := tf64.Add(tf64.Mul(ff.Get("l2"), l1), ff.Get("b2"))
-		l2(func(a *tf64.V) bool {
-			for i := range maxY {
-				for ii := range maxX {
-					max, symbol := 0.0, 0
-					for iii := range Symbols {
-						if x := a.X[(i*maxX+ii)*Symbols+iii]; x > max {
-							max, symbol = x, iii
-						}
-					}
-					if symbol == 10 {
-						fmt.Printf("U")
-					} else {
-						fmt.Printf("%c", symbol+'0')
-					}
+	index := 0
+	for _, set := range [][]Example{aa[0].Train, aa[0].Test} {
+		for s := range set {
+			fmt.Println("input")
+			input := set[s].Input
+			for y := range input {
+				for _, value := range input[y] {
+					fmt.Printf("%c", '0'+value)
+				}
+				for range maxX - len(input[y]) {
+					fmt.Printf("U")
 				}
 				fmt.Println()
 			}
-			return true
-		})
-		fmt.Println()
-		output := aa[0].Test[s].Output
-		for y := range output {
-			for _, value := range output[y] {
-				fmt.Printf("%c", '0'+value)
+			for range maxY - len(input) {
+				for range maxX {
+					fmt.Printf("U")
+				}
+				fmt.Println()
 			}
-			for range maxX - len(output[y]) {
-				fmt.Printf("U")
+
+			fmt.Println("output")
+			output := set[s].Output
+			for y := range output {
+				for _, value := range output[y] {
+					fmt.Printf("%c", '0'+value)
+				}
+				for range maxX - len(output[y]) {
+					fmt.Printf("U")
+				}
+				fmt.Println()
 			}
+			for range maxY - len(output) {
+				for range maxX {
+					fmt.Printf("U")
+				}
+				fmt.Println()
+			}
+
+			fmt.Println("infer")
+			l1 := tf64.Everett(tf64.Add(tf64.Mul(ff.Get("l1"), sets[index].Get("i")), ff.Get("b1")))
+			l2 := tf64.Add(tf64.Mul(ff.Get("l2"), l1), ff.Get("b2"))
+			l2(func(a *tf64.V) bool {
+				for i := range maxY {
+					for ii := range maxX {
+						max, symbol := 0.0, 0
+						for iii := range Symbols {
+							if x := a.X[(i*maxX+ii)*Symbols+iii]; x > max {
+								max, symbol = x, iii
+							}
+						}
+						if symbol == 10 {
+							fmt.Printf("U")
+						} else {
+							fmt.Printf("%c", symbol+'0')
+						}
+					}
+					fmt.Println()
+				}
+				return true
+			})
 			fmt.Println()
-		}
-		for range maxY - len(output) {
-			for range maxX {
-				fmt.Printf("U")
-			}
-			fmt.Println()
+			index++
 		}
 	}
 }
